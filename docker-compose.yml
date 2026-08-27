@@ -1,0 +1,10 @@
+services:
+  unify-mcp:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    restart: unless-stopped
+    # For Azure managed identity on a VM, mount nothing extra.
+    # For service principal auth, set AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET in .env

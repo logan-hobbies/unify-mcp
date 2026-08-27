@@ -1,0 +1,17 @@
+[Unit]
+Description=UniFi Read-Only MCP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=unify
+Group=unify
+WorkingDirectory=/opt/unify-mcp
+EnvironmentFile=/etc/unify-mcp/env
+ExecStart=/opt/unify-mcp/.venv/bin/unify-mcp
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

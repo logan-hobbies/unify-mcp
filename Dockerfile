@@ -1,25 +1,25 @@
-FROM python:3.12-slim
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY UnifyMcp.sln ./
+COPY src/UnifyMcp/UnifyMcp.csproj src/UnifyMcp/
+RUN dotnet restore src/UnifyMcp/UnifyMcp.csproj
+COPY src/UnifyMcp/ src/UnifyMcp/
+RUN dotnet publish src/UnifyMcp/UnifyMcp.csproj -c Release -o /app/publish /p:UseAppHost=false
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
-
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /usr/sbin/nologin unify
 
-COPY pyproject.toml README.md ./
-COPY src ./src
-
-RUN pip install .
-
-RUN useradd --create-home --shell /usr/sbin/nologin unify
 USER unify
+COPY --from=build /app/publish .
 
 EXPOSE 8080
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')" || exit 1
+    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
 
-CMD ["unify-mcp"]
+ENTRYPOINT ["dotnet", "UnifyMcp.dll"]

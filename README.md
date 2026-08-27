@@ -1,8 +1,17 @@
 # unify-mcp
 
-Read-only [Model Context Protocol](https://modelcontextprotocol.io/) server that connects AI assistants to your **UniFi home network**. Secrets (API key, optional classic credentials) live in **Azure Key Vault**; the server is designed to run on a **VPS** and expose diagnostics over HTTP.
+Read-only [Model Context Protocol](https://modelcontextprotocol.io/) server that connects AI assistants to your **UniFi home network**. Built with **.NET 10** and the official **MCP C# SDK 2.x**. Secrets live in **Azure Key Vault**; the server runs on a **VPS** over stateless Streamable HTTP.
 
 **Read-only by design:** every tool maps to UniFi GET endpoints. No creates, updates, restarts, or client actions.
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Runtime | .NET 10 |
+| MCP | [ModelContextProtocol.AspNetCore](https://www.nuget.org/packages/ModelContextProtocol.AspNetCore) 2.x (stateless HTTP) |
+| Secrets | Azure Key Vault + `DefaultAzureCredential` |
+| UniFi | Integration API (`X-API-KEY`) + Classic API (View Only local admin) |
 
 ## What you can ask AI to do
 
@@ -11,21 +20,16 @@ Read-only [Model Context Protocol](https://modelcontextprotocol.io/) server that
 - Pull **traffic / DPI** breakdowns
 - Review **anomalies**, **alarms**, **IPS/IDS events**, rogue APs
 - Search recent events for disconnects, blocks, etc.
-- Run a bundled **`unifi_troubleshoot_summary`** for AI-assisted diagnosis
+- Run **`unifi_troubleshoot_summary`** for AI-assisted diagnosis
 
 ## Architecture
 
 ```
- AI client (Cursor) ──HTTP──► VPS (unify-mcp) ──X-API-KEY──► UniFi Integration API
+ AI client (Cursor) ──HTTP──► VPS (unify-mcp, .NET 10) ──X-API-KEY──► UniFi Integration API
                                     │
                                     └── Azure Key Vault (secrets)
                                     └── Cookie auth ──► UniFi Classic API (diagnostics)
 ```
-
-| API | Auth | Used for |
-|---|---|---|
-| Integration `/proxy/network/integration/v1` | `X-API-KEY` from Key Vault | Sites, devices, clients, networks, WANs |
-| Classic `/proxy/network/api/s/{site}` | View Only local admin in Key Vault | Anomalies, events, alarms, DPI, IPS, dashboard |
 
 ## Quick start
 
@@ -40,20 +44,23 @@ az keyvault secret set --vault-name YOUR_VAULT --name unifi-password --value "YO
 
 Create the UniFi API key under **Settings → Control Plane → Integrations** using a **View Only** local admin.
 
-See [deploy/azure-setup.md](deploy/azure-setup.md) for managed identity and remote access options (Site Manager connector, VPN).
+See [deploy/azure-setup.md](deploy/azure-setup.md) for managed identity and remote access (Site Manager connector, VPN).
 
-### 2. Configure environment
+### 2. Configure
+
+Edit `src/UnifyMcp/appsettings.json` or set environment variables:
 
 ```bash
-cp .env.example .env
-# Edit AZURE_KEY_VAULT_URL and other values
+export AzureKeyVault__VaultUrl=https://YOUR_VAULT.vault.azure.net/
+export Unifi__ControllerUrl=https://192.168.1.1
+export Mcp__AuthToken=your-production-token
 ```
 
 ### 3. Run locally
 
 ```bash
-python -m pip install -e ".[dev]"
-unify-mcp
+dotnet restore
+dotnet run --project src/UnifyMcp
 ```
 
 Health check: `GET http://localhost:8080/health`
@@ -61,6 +68,7 @@ Health check: `GET http://localhost:8080/health`
 ### 4. Deploy on VPS (Docker)
 
 ```bash
+cp .env.example .env   # fill in values
 docker compose up -d --build
 ```
 
@@ -79,7 +87,7 @@ docker compose up -d --build
 }
 ```
 
-Set `MCP_AUTH_TOKEN` in production. Terminate TLS at nginx/Caddy in front of the container.
+Set `Mcp__AuthToken` in production. Terminate TLS at nginx/Caddy in front of the container.
 
 ## Tools (29 read-only)
 
@@ -92,14 +100,14 @@ Set `MCP_AUTH_TOKEN` in production. Terminate TLS at nginx/Caddy in front of the
 | `unifi_get_site_dpi` / `unifi_get_client_dpi` | Traffic by app/category |
 | `unifi_get_events` / `unifi_search_events` | Event log search |
 | `unifi_list_devices` / `unifi_list_clients` | Integration API inventory |
-| … | See `src/unify_mcp/server.py` for the full list |
+
+Full list in `src/UnifyMcp/Tools/UniFiTools.cs`.
 
 ## Development
 
 ```bash
-python -m pip install -e ".[dev]"
-pytest
-ruff check src tests
+dotnet build
+dotnet test
 ```
 
 ## Security notes

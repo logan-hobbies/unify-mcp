@@ -3,8 +3,13 @@ services:
     build: .
     ports:
       - "8080:8080"
-    env_file:
-      - .env
+    environment:
+      AzureKeyVault__VaultUrl: ${AZURE_KEY_VAULT_URL}
+      Unifi__ControllerUrl: ${UNIFI_CONTROLLER_URL:-}
+      Unifi__Site: ${UNIFI_SITE:-default}
+      Unifi__VerifySsl: ${UNIFI_VERIFY_SSL:-false}
+      Mcp__AuthToken: ${MCP_AUTH_TOKEN:-}
+      AzureKeyVault__TenantId: ${AZURE_TENANT_ID:-}
+      AzureKeyVault__ClientId: ${AZURE_CLIENT_ID:-}
+      AzureKeyVault__ClientSecret: ${AZURE_CLIENT_SECRET:-}
     restart: unless-stopped
-    # For Azure managed identity on a VM, mount nothing extra.
-    # For service principal auth, set AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET in .env

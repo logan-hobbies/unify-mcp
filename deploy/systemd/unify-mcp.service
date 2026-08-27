@@ -1,5 +1,5 @@
 [Unit]
-Description=UniFi Read-Only MCP Server
+Description=UniFi Read-Only MCP Server (.NET)
 After=network-online.target
 Wants=network-online.target
 
@@ -9,7 +9,7 @@ User=unify
 Group=unify
 WorkingDirectory=/opt/unify-mcp
 EnvironmentFile=/etc/unify-mcp/env
-ExecStart=/opt/unify-mcp/.venv/bin/unify-mcp
+ExecStart=/usr/bin/dotnet /opt/unify-mcp/UnifyMcp.dll
 Restart=on-failure
 RestartSec=5
 

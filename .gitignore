@@ -1,13 +1,18 @@
-# Python
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Python (legacy)
 __pycache__/
 *.py[cod]
-*.egg-info/
 .venv/
-venv/
-dist/
-build/
 .pytest_cache/
 .ruff_cache/
+
+# Environment
 .env
 
 # IDE

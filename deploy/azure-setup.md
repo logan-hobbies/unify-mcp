@@ -43,11 +43,11 @@ az role assignment create \
   --scope "/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.KeyVault/vaults/YOUR_VAULT"
 ```
 
-Set on the VM:
+Set on the VM (environment variables for ASP.NET Core):
 
 ```bash
-AZURE_KEY_VAULT_URL=https://YOUR_VAULT.vault.azure.net/
-UNIFI_CONTROLLER_URL=https://YOUR_UNIFI_IP_OR_CONNECTOR_URL
+AzureKeyVault__VaultUrl=https://YOUR_VAULT.vault.azure.net/
+Unifi__ControllerUrl=https://YOUR_UNIFI_IP_OR_CONNECTOR_URL
 ```
 
 ## 3. Remote access to home UniFi
@@ -88,4 +88,4 @@ Point Cursor (or another MCP client) at the VPS:
 }
 ```
 
-Use `MCP_TRANSPORT=streamable-http` and terminate TLS at nginx/Caddy on the VPS.
+Set `Mcp__AuthToken` in production. Terminate TLS at nginx/Caddy on the VPS.

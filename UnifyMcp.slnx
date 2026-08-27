@@ -1,8 +1,8 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/UnifyMcp/UnifyMcp.csproj" />
+    <Project Path="src/UnifyMcp.csproj" />
   </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/UnifyMcp.Tests/UnifyMcp.Tests.csproj" />
+  <Folder Name="/test/">
+    <Project Path="test/UnifyMcp.Tests.csproj" />
   </Folder>
 </Solution>

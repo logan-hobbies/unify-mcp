@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\UnifyMcp\UnifyMcp.csproj" />
+    <ProjectReference Include="..\src\UnifyMcp.csproj" />
   </ItemGroup>
 
 </Project>

@@ -4,6 +4,16 @@ Read-only [Model Context Protocol](https://modelcontextprotocol.io/) server that
 
 **Read-only by design:** every tool maps to UniFi GET endpoints. No creates, updates, restarts, or client actions.
 
+## Project layout
+
+```
+src/          Application code (UnifyMcp web + MCP server)
+test/         Unit tests (xUnit)
+deploy/       Azure and systemd deployment notes
+```
+
+This is the standard layout for a single-service .NET repo: production code in `src/`, tests in `test/` (or `tests/` — both are common).
+
 ## Stack
 
 | Layer | Technology |
@@ -48,7 +58,7 @@ See [deploy/azure-setup.md](deploy/azure-setup.md) for managed identity and remo
 
 ### 2. Configure
 
-Edit `src/UnifyMcp/appsettings.json` or set environment variables:
+Edit `src/appsettings.json` or set environment variables:
 
 ```bash
 export AzureKeyVault__VaultUrl=https://YOUR_VAULT.vault.azure.net/
@@ -60,7 +70,7 @@ export Mcp__AuthToken=your-production-token
 
 ```bash
 dotnet restore
-dotnet run --project src/UnifyMcp
+dotnet run --project src/UnifyMcp.csproj
 ```
 
 Health check: `GET http://localhost:8080/health`
@@ -101,7 +111,7 @@ Set `Mcp__AuthToken` in production. Terminate TLS at nginx/Caddy in front of the
 | `unifi_get_events` / `unifi_search_events` | Event log search |
 | `unifi_list_devices` / `unifi_list_clients` | Integration API inventory |
 
-Full list in `src/UnifyMcp/Tools/UniFiTools.cs`.
+Full list in `src/Tools/UniFiTools.cs`.
 
 ## Development
 

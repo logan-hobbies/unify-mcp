@@ -21,7 +21,7 @@ This is the standard layout for a single-service .NET repo: production code in `
 | Runtime | .NET 10 |
 | MCP | [ModelContextProtocol.AspNetCore](https://www.nuget.org/packages/ModelContextProtocol.AspNetCore) 2.x (stateless HTTP) |
 | Secrets | Azure Key Vault + `DefaultAzureCredential` |
-| UniFi | Integration API (`X-API-KEY`) + Classic API (View Only local admin) |
+| UniFi HTTP | [Refit](https://github.com/reactiveui/refit) typed clients (GET-only + login) |
 
 ## What you can ask AI to do
 

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using UnifyMcp.Unifi;
+using UnifyMcp.Unifi.Api;
 
 namespace UnifyMcp.Unifi;
 
@@ -7,121 +7,99 @@ public sealed class UniFiService(UniFiClient client)
 {
     public UniFiClient Client => client;
 
-    public Task<JsonElement> GetAppInfoAsync(CancellationToken ct = default) =>
-        client.IntegrationGetAsync("/info", ct: ct);
+    public async Task<JsonElement> GetAppInfoAsync(CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).GetInfoAsync(ct);
 
-    public Task<JsonElement> ListSitesAsync(CancellationToken ct = default) =>
-        client.IntegrationGetAsync("/sites", ct: ct);
+    public async Task<JsonElement> ListSitesAsync(CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).ListSitesAsync(ct);
 
-    public Task<JsonElement> ListDevicesAsync(string siteId, CancellationToken ct = default) =>
-        client.IntegrationGetAsync($"/sites/{siteId}/devices", ct: ct);
+    public async Task<JsonElement> ListDevicesAsync(string siteId, CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).ListDevicesAsync(siteId, ct);
 
-    public Task<JsonElement> GetDeviceAsync(string siteId, string deviceId, CancellationToken ct = default) =>
-        client.IntegrationGetAsync($"/sites/{siteId}/devices/{deviceId}", ct: ct);
+    public async Task<JsonElement> GetDeviceAsync(string siteId, string deviceId, CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).GetDeviceAsync(siteId, deviceId, ct);
 
-    public Task<JsonElement> GetDeviceStatsAsync(string siteId, string deviceId, CancellationToken ct = default) =>
-        client.IntegrationGetAsync($"/sites/{siteId}/devices/{deviceId}/statistics/latest", ct: ct);
+    public async Task<JsonElement> GetDeviceStatsAsync(string siteId, string deviceId, CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).GetDeviceStatsAsync(siteId, deviceId, ct);
 
-    public Task<JsonElement> ListClientsAsync(
+    public async Task<JsonElement> ListClientsAsync(
         string siteId,
         int limit = 200,
         int offset = 0,
         CancellationToken ct = default) =>
-        client.IntegrationGetAsync(
-            $"/sites/{siteId}/clients",
-            new Dictionary<string, string>
-            {
-                ["limit"] = limit.ToString(),
-                ["offset"] = offset.ToString(),
-            },
-            ct);
+        await (await client.IntegrationAsync(ct)).ListClientsAsync(siteId, limit, offset, ct);
 
-    public Task<JsonElement> GetClientAsync(string siteId, string clientId, CancellationToken ct = default) =>
-        client.IntegrationGetAsync($"/sites/{siteId}/clients/{clientId}", ct: ct);
+    public async Task<JsonElement> GetClientAsync(string siteId, string clientId, CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).GetClientAsync(siteId, clientId, ct);
 
-    public Task<JsonElement> ListNetworksAsync(string siteId, CancellationToken ct = default) =>
-        client.IntegrationGetAsync($"/sites/{siteId}/networks", ct: ct);
+    public async Task<JsonElement> ListNetworksAsync(string siteId, CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).ListNetworksAsync(siteId, ct);
 
-    public Task<JsonElement> ListWifiBroadcastsAsync(string siteId, CancellationToken ct = default) =>
-        client.IntegrationGetAsync($"/sites/{siteId}/wifi/broadcasts", ct: ct);
+    public async Task<JsonElement> ListWifiBroadcastsAsync(string siteId, CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).ListWifiBroadcastsAsync(siteId, ct);
 
-    public Task<JsonElement> ListWansAsync(string siteId, CancellationToken ct = default) =>
-        client.IntegrationGetAsync($"/sites/{siteId}/wans", ct: ct);
+    public async Task<JsonElement> ListWansAsync(string siteId, CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).ListWansAsync(siteId, ct);
 
-    public Task<JsonElement> ListFirewallPoliciesAsync(string siteId, CancellationToken ct = default) =>
-        client.IntegrationGetAsync($"/sites/{siteId}/firewall/policies", ct: ct);
+    public async Task<JsonElement> ListFirewallPoliciesAsync(string siteId, CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).ListFirewallPoliciesAsync(siteId, ct);
 
-    public Task<JsonElement> ListDpiApplicationsAsync(CancellationToken ct = default) =>
-        client.IntegrationGetAsync("/dpi/applications", ct: ct);
+    public async Task<JsonElement> ListDpiApplicationsAsync(CancellationToken ct = default) =>
+        await (await client.IntegrationAsync(ct)).ListDpiApplicationsAsync(ct);
 
     public async Task<JsonElement> GetSiteHealthAsync(CancellationToken ct = default)
     {
-        var payload = await client.ClassicGetAsync("health", ct: ct);
-        return UniFiClient.SummarizeHealth(payload);
+        var payload = await CallClassicAsync(api => api.GetHealthAsync(client.Site, ct), ct);
+        return UniFiDiagnostics.SummarizeHealth(payload);
     }
 
     public Task<JsonElement> GetSysinfoAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("sysinfo", ct: ct);
+        CallClassicAsync(api => api.GetSysinfoAsync(client.Site, ct), ct);
 
     public Task<JsonElement> ListClassicDevicesAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("devices", ct: ct);
+        CallClassicAsync(api => api.ListDevicesAsync(client.Site, ct), ct);
 
     public Task<JsonElement> ListClassicClientsAsync(int limit = 100, CancellationToken ct = default) =>
-        client.ClassicGetAsync("clients", new Dictionary<string, string> { ["_limit"] = limit.ToString() }, ct);
+        CallClassicAsync(api => api.ListClientsAsync(client.Site, limit, ct), ct);
 
-    public Task<JsonElement> GetEventsAsync(int? withinHours = 24, int limit = 100, CancellationToken ct = default)
-    {
-        var query = new Dictionary<string, string>
-        {
-            ["_limit"] = limit.ToString(),
-            ["_sort"] = "-time",
-        };
-        if (withinHours is not null)
-        {
-            query["within"] = withinHours.Value.ToString();
-        }
-
-        return client.ClassicGetAsync("events", query, ct);
-    }
+    public Task<JsonElement> GetEventsAsync(int? withinHours = 24, int limit = 100, CancellationToken ct = default) =>
+        CallClassicAsync(api => api.GetEventsAsync(client.Site, limit, "-time", withinHours, ct), ct);
 
     public Task<JsonElement> GetAlarmsAsync(int limit = 100, CancellationToken ct = default) =>
-        client.ClassicGetAsync(
-            "alarms",
-            new Dictionary<string, string> { ["_limit"] = limit.ToString(), ["_sort"] = "-time" },
-            ct);
+        CallClassicAsync(api => api.GetAlarmsAsync(client.Site, limit, "-time", ct), ct);
 
     public Task<JsonElement> GetAnomaliesAsync(int withinHours = 24, CancellationToken ct = default) =>
-        client.ClassicGetAsync("anomalies", new Dictionary<string, string> { ["within"] = withinHours.ToString() }, ct);
+        CallClassicAsync(api => api.GetAnomaliesAsync(client.Site, withinHours, ct), ct);
 
     public Task<JsonElement> GetRogueApsAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("rogue_aps", ct: ct);
+        CallClassicAsync(api => api.GetRogueApsAsync(client.Site, ct), ct);
 
     public Task<JsonElement> GetGatewayStatsAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("gateway", ct: ct);
+        CallClassicAsync(api => api.GetGatewayStatsAsync(client.Site, ct), ct);
 
     public Task<JsonElement> GetDashboardAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("dashboard", ct: ct);
+        CallClassicAsync(api => api.GetDashboardAsync(client.Site, ct), ct);
 
     public Task<JsonElement> GetSiteDpiAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("site_dpi", ct: ct);
+        CallClassicAsync(api => api.GetSiteDpiAsync(client.Site, ct), ct);
 
     public Task<JsonElement> GetClientDpiAsync(int limit = 50, CancellationToken ct = default) =>
-        client.ClassicGetAsync("client_dpi", new Dictionary<string, string> { ["_limit"] = limit.ToString() }, ct);
+        CallClassicAsync(api => api.GetClientDpiAsync(client.Site, limit, ct), ct);
 
     public Task<JsonElement> GetIpsEventsAsync(int limit = 100, CancellationToken ct = default) =>
-        client.ClassicGetAsync("ips_events", new Dictionary<string, string> { ["_limit"] = limit.ToString() }, ct);
+        CallClassicAsync(api => api.GetIpsEventsAsync(client.Site, limit, ct), ct);
 
     public Task<JsonElement> GetPortAnomaliesAsync(CancellationToken ct = default) =>
-        client.ClassicV2GetAsync("ports/port-anomalies", ct: ct);
+        CallClassicAsync(api => api.GetPortAnomaliesAsync(client.Site, ct), ct);
 
     public Task<JsonElement> GetKnownClientsAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("known_clients", ct: ct);
+        CallClassicAsync(api => api.GetKnownClientsAsync(client.Site, ct), ct);
 
     public Task<JsonElement> GetFirewallRulesAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("firewall_rules", ct: ct);
+        CallClassicAsync(api => api.GetFirewallRulesAsync(client.Site, ct), ct);
 
     public Task<JsonElement> GetIpsSettingsAsync(CancellationToken ct = default) =>
-        client.ClassicGetAsync("settings_ips", ct: ct);
+        CallClassicAsync(api => api.GetIpsSettingsAsync(client.Site, ct), ct);
 
     public async Task<JsonElement> SearchEventsAsync(
         IReadOnlyList<string> keywords,
@@ -130,7 +108,7 @@ public sealed class UniFiService(UniFiClient client)
     {
         var payload = await GetEventsAsync(withinHours: 24, limit: Math.Max(limit, 200), ct);
         var events = ExtractDataArray(payload);
-        var matches = UniFiClient.FilterEvents(events, keywords, limit);
+        var matches = UniFiDiagnostics.FilterEvents(events, keywords, limit);
         return JsonSerializer.SerializeToElement(new
         {
             keywords,
@@ -159,22 +137,30 @@ public sealed class UniFiService(UniFiClient client)
             issues.Add($"health: {ex.Message}");
         }
 
-        await CollectSignalAsync("anomalies", () => GetAnomaliesAsync(ct: ct), issues, signals, ct);
-        await CollectSignalAsync("alarms", () => GetAlarmsAsync(limit: 25, ct: ct), issues, signals, ct);
-        await CollectSignalAsync("ips_events", () => GetIpsEventsAsync(limit: 25, ct: ct), issues, signals, ct);
-        await CollectSignalAsync("rogue_aps", () => GetRogueApsAsync(ct), issues, signals, ct);
-        await CollectSignalAsync("gateway", () => GetGatewayStatsAsync(ct), issues, signals, ct);
-        await CollectSignalAsync("dashboard", () => GetDashboardAsync(ct), issues, signals, ct);
+        await CollectSignalAsync("anomalies", () => GetAnomaliesAsync(ct: ct), issues, signals);
+        await CollectSignalAsync("alarms", () => GetAlarmsAsync(limit: 25, ct: ct), issues, signals);
+        await CollectSignalAsync("ips_events", () => GetIpsEventsAsync(limit: 25, ct: ct), issues, signals);
+        await CollectSignalAsync("rogue_aps", () => GetRogueApsAsync(ct), issues, signals);
+        await CollectSignalAsync("gateway", () => GetGatewayStatsAsync(ct), issues, signals);
+        await CollectSignalAsync("dashboard", () => GetDashboardAsync(ct), issues, signals);
 
         return JsonSerializer.SerializeToElement(summary);
+    }
+
+    private async Task<JsonElement> CallClassicAsync(
+        Func<IUniFiClassicApi, Task<JsonElement>> call,
+        CancellationToken ct)
+    {
+        var payload = await client.CallClassicAsync(call, ct);
+        UniFiDiagnostics.ValidateClassicPayload(payload);
+        return payload;
     }
 
     private static async Task CollectSignalAsync(
         string name,
         Func<Task<JsonElement>> fetch,
         List<string> issues,
-        Dictionary<string, object?> signals,
-        CancellationToken ct)
+        Dictionary<string, object?> signals)
     {
         try
         {

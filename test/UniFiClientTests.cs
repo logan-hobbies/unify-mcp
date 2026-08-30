@@ -1,27 +1,65 @@
+using System.Net;
 using System.Text.Json;
+using Refit;
 using UnifyMcp.Unifi;
+using UnifyMcp.Unifi.Api;
 
 namespace UnifyMcp.Tests;
 
 public class UniFiClientTests
 {
     [Fact]
-    public void AssertGetOnly_blocks_post()
+    public void Integration_interface_is_get_only()
     {
-        var ex = Assert.ThrowsAny<Exception>(() => InvokeAssertGetOnly("POST"));
-        var violation = ex as ReadOnlyViolationException ?? ex.InnerException as ReadOnlyViolationException;
-        Assert.NotNull(violation);
-        Assert.Contains("POST", violation!.Message);
+        var methods = typeof(IUniFiIntegrationApi).GetMethods();
+        Assert.All(methods, method =>
+        {
+            Assert.Contains(method.GetCustomAttributes(false), attr => attr is GetAttribute);
+            Assert.DoesNotContain(method.GetCustomAttributes(false), attr =>
+                attr is PostAttribute or PutAttribute or PatchAttribute or DeleteAttribute);
+        });
     }
 
     [Fact]
-    public void AssertReadOnlyPath_blocks_actions()
+    public void Classic_interface_is_get_only()
     {
-        var ex = Assert.ThrowsAny<Exception>(() =>
-            InvokeAssertReadOnlyPath("/v1/sites/abc/devices/123/actions"));
-        var violation = ex as ReadOnlyViolationException ?? ex.InnerException as ReadOnlyViolationException;
-        Assert.NotNull(violation);
-        Assert.Contains("actions", violation!.Message);
+        var methods = typeof(IUniFiClassicApi).GetMethods();
+        Assert.All(methods, method =>
+        {
+            Assert.Contains(method.GetCustomAttributes(false), attr => attr is GetAttribute);
+            Assert.DoesNotContain(method.GetCustomAttributes(false), attr =>
+                attr is PostAttribute or PutAttribute or PatchAttribute or DeleteAttribute);
+        });
+    }
+
+    [Fact]
+    public async Task Refit_builds_integration_info_url()
+    {
+        var handler = new RecordingHandler("""{"applicationVersion":"10.0.0"}""");
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://unifi.local/") };
+        var api = RestService.For<IUniFiIntegrationApi>(http, UniFiRefitSettings.Create());
+
+        var result = await api.GetInfoAsync();
+
+        Assert.Equal("https://unifi.local/proxy/network/integration/v1/info", handler.LastRequest!.RequestUri!.ToString());
+        Assert.Equal(HttpMethod.Get, handler.LastRequest.Method);
+        Assert.Equal("10.0.0", result.GetProperty("applicationVersion").GetString());
+    }
+
+    [Fact]
+    public async Task Refit_builds_classic_anomalies_url()
+    {
+        var handler = new RecordingHandler("""{"data":[]}""");
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://unifi.local/") };
+        var api = RestService.For<IUniFiClassicApi>(http, UniFiRefitSettings.Create());
+
+        await api.GetAnomaliesAsync("default", within: 24);
+
+        Assert.Equal(HttpMethod.Get, handler.LastRequest!.Method);
+        Assert.StartsWith(
+            "https://unifi.local/proxy/network/api/s/default/stat/anomalies",
+            handler.LastRequest.RequestUri!.ToString());
+        Assert.Contains("within=24", handler.LastRequest.RequestUri.Query);
     }
 
     [Fact]
@@ -41,7 +79,7 @@ public class UniFiClientTests
             }
             """);
 
-        var summary = UniFiClient.SummarizeHealth(document.RootElement);
+        var summary = UniFiDiagnostics.SummarizeHealth(document.RootElement);
         Assert.Contains("wan", summary.GetRawText());
         Assert.Contains("ok", summary.GetRawText());
     }
@@ -58,23 +96,23 @@ public class UniFiClientTests
             """);
 
         var events = document.RootElement.EnumerateArray().ToList();
-        var matches = UniFiClient.FilterEvents(events, ["disconnect", "blocked"], 10);
+        var matches = UniFiDiagnostics.FilterEvents(events, ["disconnect", "blocked"], 10);
         Assert.Equal(2, matches.Count);
     }
 
-    private static void InvokeAssertGetOnly(string method)
+    private sealed class RecordingHandler(string json) : HttpMessageHandler
     {
-        var methodInfo = typeof(UniFiClient).GetMethod(
-            "AssertGetOnly",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-        methodInfo!.Invoke(null, [method]);
-    }
+        public HttpRequestMessage? LastRequest { get; private set; }
 
-    private static void InvokeAssertReadOnlyPath(string path)
-    {
-        var methodInfo = typeof(UniFiClient).GetMethod(
-            "AssertReadOnlyPath",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-        methodInfo!.Invoke(null, [path]);
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+            });
+        }
     }
 }

@@ -1,34 +1,49 @@
+using System.Reflection;
 using ModelContextProtocol.AspNetCore;
+using UnifyMcp.Auth;
 using UnifyMcp.Configuration;
 using UnifyMcp.Secrets;
 using UnifyMcp.Tools;
 using UnifyMcp.Unifi;
 
-var builder = WebApplication.CreateBuilder(args);
+var mcpSettings = new ConfigurationBuilder()
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args)
+    .Build()
+    .GetSection("Mcp").Get<McpSettings>() ?? new McpSettings();
 
-builder.Services.Configure<AzureKeyVaultSettings>(builder.Configuration.GetSection("AzureKeyVault"));
-builder.Services.Configure<UnifiSettings>(builder.Configuration.GetSection("Unifi"));
-builder.Services.Configure<McpSettings>(builder.Configuration.GetSection("Mcp"));
-
-builder.Services.AddSingleton<AzureSecretStore>();
-builder.Services.AddSingleton<UniFiClient>();
-builder.Services.AddSingleton<UniFiService>();
-
-var mcpSettings = builder.Configuration.GetSection("Mcp").Get<McpSettings>() ?? new McpSettings();
 var transport = mcpSettings.Transport.Trim().ToLowerInvariant();
+var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
 
 if (transport is "stdio")
 {
-    builder.Services.AddMcpServer()
+    // Stdio: plain generic host, no Kestrel.
+    var host = Host.CreateApplicationBuilder(args);
+    RegisterCore(host.Services, host.Configuration);
+    host.Services.AddMcpServer()
         .WithStdioServerTransport()
         .WithTools<UniFiTools>();
+    host.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
+    await host.Build().RunAsync();
+    return;
 }
-else
+
+if (string.IsNullOrWhiteSpace(mcpSettings.AuthToken) && !mcpSettings.AllowAnonymous)
 {
-    builder.Services.AddMcpServer()
-        .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
-        .WithTools<UniFiTools>();
+    throw new InvalidOperationException(
+        "Mcp:AuthToken is required for HTTP transport. Set Mcp__AuthToken, or set " +
+        "Mcp__AllowAnonymous=true for local development only.");
 }
+
+var builder = WebApplication.CreateBuilder(args);
+RegisterCore(builder.Services, builder.Configuration);
+builder.Services.AddMcpServer()
+    .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
+    .WithTools<UniFiTools>();
+
+// Bind from Mcp settings only; ignore launchSettings so the listen address is deliberate.
+builder.WebHost.UseUrls($"http://{mcpSettings.Host}:{mcpSettings.Port}");
 
 var app = builder.Build();
 
@@ -43,10 +58,10 @@ if (!string.IsNullOrWhiteSpace(mcpSettings.AuthToken))
             return;
         }
 
-        var authorization = context.Request.Headers.Authorization.ToString();
-        if (authorization != $"Bearer {expected}")
+        if (!BearerTokenAuth.Matches(context.Request.Headers.Authorization.ToString(), expected))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.Headers.WWWAuthenticate = "Bearer";
             return;
         }
 
@@ -54,13 +69,8 @@ if (!string.IsNullOrWhiteSpace(mcpSettings.AuthToken))
     });
 }
 
-app.MapGet("/health", () => Results.Json(new { status = "ok", service = "unify-mcp", version = "0.2.0" }));
-
-if (transport is not "stdio")
-{
-    app.MapMcp();
-    app.Urls.Add($"http://{mcpSettings.Host}:{mcpSettings.Port}");
-}
+app.MapGet("/health", () => Results.Json(new { status = "ok", service = "unify-mcp", version }));
+app.MapMcp("/mcp");
 
 app.Lifetime.ApplicationStopping.Register(() =>
 {
@@ -69,3 +79,14 @@ app.Lifetime.ApplicationStopping.Register(() =>
 });
 
 await app.RunAsync();
+
+static void RegisterCore(IServiceCollection services, IConfiguration configuration)
+{
+    services.Configure<AzureKeyVaultSettings>(configuration.GetSection("AzureKeyVault"));
+    services.Configure<UnifiSettings>(configuration.GetSection("Unifi"));
+    services.Configure<McpSettings>(configuration.GetSection("Mcp"));
+
+    services.AddSingleton<AzureSecretStore>();
+    services.AddSingleton<UniFiClient>();
+    services.AddSingleton<UniFiService>();
+}

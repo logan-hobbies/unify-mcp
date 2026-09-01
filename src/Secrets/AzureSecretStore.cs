@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Azure;
 using Azure.Core;
 using Azure.Identity;
@@ -12,7 +13,9 @@ public sealed class AzureSecretStore
     private readonly SecretClient _client;
     private readonly AzureKeyVaultSettings _vaultSettings;
     private readonly UnifiSettings _unifiSettings;
-    private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
+
+    // Lazy<Task> so concurrent first-callers share one Key Vault round-trip per secret.
+    private readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _cache = new(StringComparer.Ordinal);
 
     public AzureSecretStore(
         IOptions<AzureKeyVaultSettings> vaultSettings,
@@ -21,9 +24,11 @@ public sealed class AzureSecretStore
         _vaultSettings = vaultSettings.Value;
         _unifiSettings = unifiSettings.Value;
 
-        if (string.IsNullOrWhiteSpace(_vaultSettings.VaultUrl))
+        if (string.IsNullOrWhiteSpace(_vaultSettings.VaultUrl)
+            || _vaultSettings.VaultUrl.Contains("your-vault", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("AzureKeyVault:VaultUrl is required.");
+            throw new InvalidOperationException(
+                "AzureKeyVault:VaultUrl is required (set AzureKeyVault__VaultUrl to your real vault URL).");
         }
 
         _client = new SecretClient(new Uri(_vaultSettings.VaultUrl), CreateCredential());
@@ -46,31 +51,50 @@ public sealed class AzureSecretStore
 
     public async Task<string> GetSecretAsync(string name, bool required = true, CancellationToken ct = default)
     {
-        if (_cache.TryGetValue(name, out var cached))
-        {
-            return cached;
-        }
+        var lazy = _cache.GetOrAdd(name, n => new Lazy<Task<string?>>(() => FetchAsync(n)));
 
+        string? value;
         try
         {
-            var secret = await _client.GetSecretAsync(name, cancellationToken: ct);
+            value = await lazy.Value.WaitAsync(ct);
+        }
+        catch
+        {
+            _cache.TryRemove(name, out _);
+            throw;
+        }
+
+        if (value is null)
+        {
+            // Not found: don't cache so a secret added later is picked up without restart.
+            _cache.TryRemove(name, out _);
+            if (required)
+            {
+                throw new InvalidOperationException($"Secret '{name}' was not found in Key Vault.");
+            }
+
+            return string.Empty;
+        }
+
+        return value;
+    }
+
+    private async Task<string?> FetchAsync(string name)
+    {
+        try
+        {
+            var secret = await _client.GetSecretAsync(name);
             var value = secret.Value.Value;
             if (string.IsNullOrEmpty(value))
             {
                 throw new InvalidOperationException($"Secret '{name}' exists but has no value.");
             }
 
-            _cache[name] = value;
             return value;
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
-            if (required)
-            {
-                throw new InvalidOperationException($"Secret '{name}' was not found in Key Vault.", ex);
-            }
-
-            return string.Empty;
+            return null;
         }
     }
 

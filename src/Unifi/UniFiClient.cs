@@ -12,7 +12,7 @@ public sealed class UniFiClient : IAsyncDisposable
 {
     private readonly AzureSecretStore _secrets;
     private readonly UnifiSettings _settings;
-    private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private readonly JsonSerializerOptions _jsonOptions = UniFiRefitSettings.JsonOptions;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly RefitSettings _refitSettings = UniFiRefitSettings.Create();
 
@@ -166,14 +166,23 @@ public sealed class UniFiClient : IAsyncDisposable
 
     private HttpMessageHandler CreateSocketsHandler(bool useCookies)
     {
-        return new HttpClientHandler
+        var handler = new SocketsHttpHandler
         {
             CookieContainer = new CookieContainer(),
             UseCookies = useCookies,
-            ServerCertificateCustomValidationCallback = _settings.VerifySsl
-                ? null
-                : HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+            // Never follow redirects: an API key or session cookie must not be replayed to another host.
+            AllowAutoRedirect = false,
+            // Recycle connections so DNS/Tailscale IP changes are picked up on a long-lived client.
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         };
+
+        if (!_settings.VerifySsl)
+        {
+            // Home consoles ship self-signed certs; only relax validation for the UniFi host.
+            handler.SslOptions.RemoteCertificateValidationCallback = static (_, _, _, _) => true;
+        }
+
+        return handler;
     }
 
     private HttpClient CreateHttpClient(string baseUrl, HttpMessageHandler handler) =>

@@ -63,6 +63,22 @@ public class UniFiClientTests
     }
 
     [Fact]
+    public async Task Login_body_uses_lowercase_field_names()
+    {
+        var handler = new RecordingHandler("{}");
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://unifi.local/") };
+        var api = RestService.For<IUniFiAuthApi>(http, UniFiRefitSettings.Create());
+
+        using var response = await api.LoginAsync(new UniFiLoginRequest("mcp-readonly", "pw"));
+
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal("https://unifi.local/api/auth/login", handler.LastRequest.RequestUri!.ToString());
+        Assert.Equal(
+            """{"username":"mcp-readonly","password":"pw","remember":true}""",
+            handler.LastRequestBody);
+    }
+
+    [Fact]
     public void SummarizeHealth_maps_subsystems()
     {
         using var document = JsonDocument.Parse("""
@@ -103,16 +119,20 @@ public class UniFiClientTests
     private sealed class RecordingHandler(string json) : HttpMessageHandler
     {
         public HttpRequestMessage? LastRequest { get; private set; }
+        public string? LastRequestBody { get; private set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             LastRequest = request;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            LastRequestBody = request.Content is null
+                ? null
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
-            });
+            };
         }
     }
 }

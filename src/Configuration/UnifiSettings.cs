@@ -22,8 +22,18 @@ public sealed class UnifiSettings
 
 public sealed class McpSettings
 {
+    /// <summary>
+    /// Listen address. Inside the Tailscale sidecar network namespace 0.0.0.0 only reaches the
+    /// tailnet + loopback. On a bare VPS set this to the Tailscale IP (100.x.x.x), never a public NIC.
+    /// </summary>
     public string Host { get; set; } = "0.0.0.0";
     public int Port { get; set; } = 8080;
     public string Transport { get; set; } = "streamable-http";
     public string? AuthToken { get; set; }
+
+    /// <summary>
+    /// Explicit opt-out from bearer auth. Only for local development; HTTP transport refuses to
+    /// start without a token unless this is true.
+    /// </summary>
+    public bool AllowAnonymous { get; set; }
 }

@@ -1,0 +1,45 @@
+# unify-mcp behind Tailscale.
+#
+# The MCP container shares the Tailscale sidecar's network namespace, so port 8080 is
+# reachable ONLY from your tailnet (and loopback). Nothing is published on the VPS public NIC.
+#
+# Required in .env: TS_AUTHKEY, AZURE_KEY_VAULT_URL, MCP_AUTH_TOKEN
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: unify-mcp-tailscale
+    hostname: unify-mcp            # MagicDNS name: http://unify-mcp:8080/mcp
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:---advertise-tags=tag:mcp}
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+    restart: unless-stopped
+
+  unify-mcp:
+    build: .
+    container_name: unify-mcp
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+    environment:
+      AzureKeyVault__VaultUrl: ${AZURE_KEY_VAULT_URL}
+      AzureKeyVault__TenantId: ${AZURE_TENANT_ID:-}
+      AzureKeyVault__ClientId: ${AZURE_CLIENT_ID:-}
+      AzureKeyVault__ClientSecret: ${AZURE_CLIENT_SECRET:-}
+      Unifi__ControllerUrl: ${UNIFI_CONTROLLER_URL:-}
+      Unifi__Site: ${UNIFI_SITE:-default}
+      Unifi__VerifySsl: ${UNIFI_VERIFY_SSL:-false}
+      Mcp__Host: 0.0.0.0             # only the tailnet + loopback inside this namespace
+      Mcp__Port: 8080
+      Mcp__AuthToken: ${MCP_AUTH_TOKEN}
+    restart: unless-stopped
+
+volumes:
+  tailscale-state:

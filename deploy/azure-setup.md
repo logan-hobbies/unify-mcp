@@ -11,7 +11,8 @@ Create these secrets in Azure Key Vault:
 | `unifi-username` | View Only local admin | For classic diagnostics |
 | `unifi-password` | Local admin password | For classic diagnostics |
 
-\* You can set `UNIFI_CONTROLLER_URL` in env instead of storing the URL in Key Vault.
+\* You can set `UNIFI_CONTROLLER_URL` in env instead of storing the URL in Key Vault
+(typically the console's Tailscale IP, e.g. `https://100.x.x.x`).
 
 ### UniFi API key
 
@@ -52,40 +53,10 @@ Unifi__ControllerUrl=https://YOUR_UNIFI_IP_OR_CONNECTOR_URL
 
 ## 3. Remote access to home UniFi
 
-Pick one:
-
-**A. UniFi Site Manager Connector (recommended)**
-
-If your console firmware is ≥ 5.0.3, use the cloud connector so the VPS never needs
-LAN access:
-
-```
-UNIFI_CONTROLLER_URL=https://api.ui.com/v1/connector/consoles/YOUR_CONSOLE_ID
-```
-
-**B. VPN / Tailscale**
-
-Run the MCP on a host that can reach the UniFi gateway over VPN.
-
-**C. Reverse proxy + IP allowlist**
-
-Only if you accept exposing the controller; not recommended.
+Use **Tailscale** — see [tailscale.md](tailscale.md). The VPS reaches the console over the tailnet
+(console on Tailscale, or a subnet router advertising your LAN), and Cursor reaches the MCP the same way.
+Nothing is exposed to the public internet.
 
 ## 4. MCP client configuration
 
-Point Cursor (or another MCP client) at the VPS:
-
-```json
-{
-  "mcpServers": {
-    "unify": {
-      "url": "https://your-vps.example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
-      }
-    }
-  }
-}
-```
-
-Set `Mcp__AuthToken` in production. Terminate TLS at nginx/Caddy on the VPS.
+See [tailscale.md](tailscale.md#4-cursor).

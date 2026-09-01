@@ -1,6 +1,6 @@
 # unify-mcp
 
-Read-only [Model Context Protocol](https://modelcontextprotocol.io/) server that connects AI assistants to your **UniFi home network**. Built with **.NET 10** and the official **MCP C# SDK 2.x**. Secrets live in **Azure Key Vault**; the server runs on a **VPS** over stateless Streamable HTTP.
+Read-only [Model Context Protocol](https://modelcontextprotocol.io/) server that connects AI assistants to your **UniFi home network**. Built with **.NET 10** and the official **MCP C# SDK 2.x**. Secrets live in **Azure Key Vault**; the server runs in Docker on a **VPS behind Tailscale** with no public ports.
 
 **Read-only by design:** every tool maps to UniFi GET endpoints. No creates, updates, restarts, or client actions.
 
@@ -35,11 +35,13 @@ This is the standard layout for a single-service .NET repo: production code in `
 ## Architecture
 
 ```
- AI client (Cursor) ──HTTP──► VPS (unify-mcp, .NET 10) ──X-API-KEY──► UniFi Integration API
+ PC (Cursor) ──tailnet──► VPS: tailscale sidecar + unify-mcp ──tailnet──► Home UniFi console
                                     │
-                                    └── Azure Key Vault (secrets)
-                                    └── Cookie auth ──► UniFi Classic API (diagnostics)
+                                    └── Azure Key Vault (API key, View Only creds)
 ```
+
+Both hops ride Tailscale (WireGuard). The MCP container shares the Tailscale sidecar's network
+namespace, so `:8080` is reachable only from your tailnet. See [deploy/tailscale.md](deploy/tailscale.md).
 
 ## Quick start
 
@@ -58,29 +60,34 @@ See [deploy/azure-setup.md](deploy/azure-setup.md) for managed identity and remo
 
 ### 2. Configure
 
-Edit `src/appsettings.json` or set environment variables:
+Environment variables (or `src/appsettings.json`):
 
 ```bash
 export AzureKeyVault__VaultUrl=https://YOUR_VAULT.vault.azure.net/
-export Unifi__ControllerUrl=https://192.168.1.1
-export Mcp__AuthToken=your-production-token
+export Unifi__ControllerUrl=https://100.x.x.x      # console's Tailscale or LAN IP
+export Mcp__AuthToken=$(openssl rand -base64 32)
 ```
+
+`Mcp__AuthToken` is **required** for HTTP transport; the server refuses to start without it.
+For local dev only, `Mcp__AllowAnonymous=true` skips the check (the `http` launch profile sets this).
 
 ### 3. Run locally
 
 ```bash
-dotnet restore
 dotnet run --project src/UnifyMcp.csproj
 ```
 
-Health check: `GET http://localhost:8080/health`
+Health check: `GET http://127.0.0.1:8080/health` — MCP endpoint: `POST /mcp`
 
-### 4. Deploy on VPS (Docker)
+### 4. Deploy on VPS behind Tailscale (Docker)
 
 ```bash
-cp .env.example .env   # fill in values
+cp .env.example .env   # TS_AUTHKEY, AZURE_KEY_VAULT_URL, UNIFI_CONTROLLER_URL, MCP_AUTH_TOKEN
 docker compose up -d --build
+docker compose exec tailscale tailscale status
 ```
+
+Full walkthrough incl. subnet router and ACLs: [deploy/tailscale.md](deploy/tailscale.md).
 
 ## Cursor MCP config
 
@@ -88,7 +95,7 @@ docker compose up -d --build
 {
   "mcpServers": {
     "unify": {
-      "url": "https://your-vps.example.com/mcp",
+      "url": "http://unify-mcp:8080/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
       }
@@ -97,9 +104,11 @@ docker compose up -d --build
 }
 ```
 
-Set `Mcp__AuthToken` in production. Terminate TLS at nginx/Caddy in front of the container.
+`unify-mcp` is the MagicDNS name of the sidecar; use its `100.x.x.x` IP if MagicDNS is off. Plain
+HTTP is fine because the tailnet is already encrypted. Cloud-hosted agents are not on your tailnet and
+cannot reach this server.
 
-## Tools (29 read-only)
+## Tools (32 read-only)
 
 | Tool | Purpose |
 |---|---|
@@ -124,8 +133,11 @@ dotnet test
 
 - Use a **View Only** UniFi local admin for both the API key and classic credentials.
 - Grant the VPS identity only **Key Vault Secrets User** on the vault.
-- Prefer the **Site Manager connector** or VPN instead of exposing your controller to the internet.
-- This server never exposes secret values through MCP tools.
+- Keep the MCP on the tailnet; never publish `8080` on a public interface.
+- Bearer auth is mandatory on HTTP and compared in constant time.
+- Redirects are disabled on UniFi calls so the API key / session cookie can't be replayed elsewhere.
+- Raw tools (WLANs, known clients, devices) can return SSIDs, hostnames, MACs and other network
+  details; those go to the model. Review what you ask for.
 
 ## License
 
